@@ -1,0 +1,25 @@
+[build-system]
+requires = [
+    "setuptools>=42",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+
+
+[tool.mypy]
+
+[[tool.mypy.overrides]]
+module = [
+    "torchvision.*",
+    "lightning.*",
+    "torchtext.*",
+    "sklearn.*",
+    "matplotlib.*",
+]
+ignore_missing_imports = true

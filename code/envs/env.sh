@@ -1,0 +1,8 @@
+export OPTEXP_WORKSPACE=~/workspace
+export OPTEXP_WANDB_ENABLED=true
+export OPTEXP_WANDB_MODE=offline
+export OPTEXP_WANDB_PROJECT=testing
+export OPTEXP_WANDB_ENTITY=wandb_entity
+export WANDB_API_KEY=ssssssssssssssssssssssssssssssssssssssss
+export OPTEXP_SLURM_NOTIFICATION_EMAIL=mail@example.com
+export OPTEXP_SLURM_ACCOUNT=acc-name

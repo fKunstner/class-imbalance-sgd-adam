@@ -1,0 +1,8 @@
+set OPTEXP_WORKSPACE=C:\Users\user\path-to-workspace
+set OPTEXP_WANDB_ENABLED=true
+set OPTEXP_WANDB_MODE=offline
+set OPTEXP_WANDB_PROJECT=testing
+set OPTEXP_WANDB_ENTITY=wandb_entity
+set WANDB_API_KEY=ssssssssssssssssssssssssssssssssssssssss
+set OPTEXP_SLURM_NOTIFICATION_EMAIL=mail@example.com
+set OPTEXP_SLURM_ACCOUNT=acc-name

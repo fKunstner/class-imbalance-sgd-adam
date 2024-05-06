@@ -1,0 +1,4 @@
+# Requirements to generate the documentation
+sphinx==6.2.1
+sphinx-rtd-theme==1.2.1
+m2r2==0.3.2
