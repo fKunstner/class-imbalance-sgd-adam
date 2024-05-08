@@ -28,6 +28,8 @@ from optexp.datasets.loaders.imagenet_loader import (
     load_imagenet,
     load_imbalanced_imagenet,
     load_10_big_class_imagenet,
+    load_1_major_class_imagenet,
+    load_small_imagenet,
 )
 from optexp.datasets.loaders.tiny_stories_loader import (
     download_tiny_stories,

@@ -51,6 +51,7 @@ VISION_GPU_12H = SlurmConfig(time="0-12:00", mem="32G", cpus=16, gpu="v100l")
 VISION_A100_6H = SlurmConfig(time="0-6:00", mem="64G", cpus=16, gpu="a100")
 VISION_A100_3H = SlurmConfig(time="0-3:00", mem="64G", cpus=16, gpu="a100")
 VISION_GPU_3H = SlurmConfig(time="0-3:00", mem="64G", cpus=16, gpu=True)
+VISION_GPU_5H = SlurmConfig(time="0-5:00", mem="64G", cpus=16, gpu=True)
 VISION_V100_8H = SlurmConfig(time="0-8:00", mem="64G", cpus=16, gpu="v100l")
 VISION_V100_12H = SlurmConfig(time="0-12:00", mem="64G", cpus=16, gpu="v100l")
 

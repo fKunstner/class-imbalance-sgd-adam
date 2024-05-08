@@ -4,4 +4,4 @@ torchaudio==0.13.1
 torchdata==0.5.1
 torchtext==0.14.1
 portalocker==2.7.0
-pytorch_lightning==2.0.9
+lightning==2.0.9

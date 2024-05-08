@@ -31,12 +31,6 @@ optimizers = [
     SGD_M(LearningRate(Fraction(-3, 1))),
     Adam_NM(LearningRate(Fraction(-4, 1))),
     Adam_M(LearningRate(Fraction(-7, 2))),
-    NormSGD_NM(LearningRate(Fraction(-1, 1))),
-    NormSGD_M(LearningRate(Fraction(-3, 2))),
-    Sign_NM(LearningRate(Fraction(-5, 1))),
-    Sign_M(LearningRate(Fraction(-5, 1))),
-    ScaledSign_M(LearningRate(Fraction(-8, 1))),
-    ScaledSign_NM(LearningRate(Fraction(-8, 1))),
     # Adagrad(LearningRate(Fraction(-3, 1))),
     # LSGD(),
 ]

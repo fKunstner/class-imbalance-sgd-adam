@@ -9,4 +9,5 @@ pyarrow==13.0.0
 pandas
 wandb==0.15.3
 matplotlib==3.6.1
+vit_pytorch==1.6.5
 git+https://github.com/fkunstner/dataset-downloader.git

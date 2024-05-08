@@ -70,3 +70,17 @@ class TenBigClassImageNet(ImageDataset):
     batch_size: int
     name: str = field(default="TenBigClassImageNet", init=False)
     flatten: bool = False
+
+
+
+@dataclass(frozen=True)
+class OneMajorClassImageNet(ImageDataset):
+    batch_size: int
+    name: str = field(default="OneMajorClassImageNet", init=False)
+    flatten: bool = False
+
+@dataclass(frozen=True)
+class SmallImageNet(ImageDataset):
+    batch_size: int
+    name: str = field(default="SmallImageNet", init=False)
+    flatten: bool = False

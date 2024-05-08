@@ -1,5 +1,4 @@
 import os
-import sys
 
 from optexp import SGD, Adam, Experiment, NormSGD, config
 from optexp.experiments.bigger_models.gpt2small_wt103 import (

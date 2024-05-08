@@ -31,9 +31,13 @@ def download_dataset(dataset_name):
         download_wt103(config.get_dataset_directory())
     elif dataset_name == "ImageNet":
         print("Downloading ImageNet takes days. Find your own.")
+    elif dataset_name == "SmallImageNet":
+        print("This is an artisan hand crafed dataset. Refer to new_scripts to make your own.")
     elif dataset_name == "ImbalancedImageNet":
         print("This is an artisan hand crafed dataset. Refer to new_scripts to make your own.")
     elif dataset_name == "TenBigClassImageNet":
+        print("This is an artisan hand crafed dataset. Refer to new_scripts to make your own.")
+    elif dataset_name == "OneMajorClassImageNet":
         print("This is an artisan hand crafed dataset. Refer to new_scripts to make your own.")
     elif dataset_name == "TinyStories":
         download_tiny_stories(config.get_dataset_directory())

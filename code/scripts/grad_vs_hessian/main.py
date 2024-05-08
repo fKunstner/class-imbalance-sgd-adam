@@ -22,9 +22,13 @@ from optexp.plotter.caching_helper import (
 from optexp.plotter.plot_utils import normalize_y_axis, subsample
 from optexp.plotter.style_figure import update_plt
 
-sgd, sgdm, adam, adamm, nsgd, nsgdm, sign, signm = optimizers[:8]
+sgd, sgdm, adam, adamm = optimizers[:8]
 
 EPOCHS_TO_SAVE = (0, 1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100)
+
+
+def timestr(T, flipped=False):
+    return f"T={T}" + ("_flipped" if flipped else "")
 
 
 def run_and_save_checkpoints():
@@ -54,27 +58,42 @@ def run_and_save_checkpoints():
     run_with_opt(problem, adamm, epochs_to_save=EPOCHS_TO_SAVE)
 
 
-def process_grads():
+def process_grads(flipped):
     for opt in tqdm([sgd, adamm]):
         w_done = all(
-            [grad_w_cache.exists(opt, f"T={epoch}") for epoch in EPOCHS_TO_SAVE]
+            [
+                grad_w_cache.exists(opt, timestr(epoch, flipped))
+                for epoch in EPOCHS_TO_SAVE
+            ]
         )
         b_done = all(
-            [grad_b_cache.exists(opt, f"T={epoch}") for epoch in EPOCHS_TO_SAVE]
+            [
+                grad_b_cache.exists(opt, timestr(epoch, flipped))
+                for epoch in EPOCHS_TO_SAVE
+            ]
         )
         if w_done and b_done:
             continue
 
         X, y = (x_cache.load(opt), y_cache.load(opt))
+
         for epoch in tqdm(EPOCHS_TO_SAVE):
             if (
-                grad_b_cache.get_path(opt, f"T={epoch}").exists()
-                and grad_w_cache.get_path(opt, f"T={epoch}").exists()
+                grad_b_cache.get_path(opt, timestr(epoch, flipped)).exists()
+                and grad_w_cache.get_path(opt, timestr(epoch, flipped)).exists()
             ):
                 continue
 
             problem.init_problem()
-            problem.torch_model.load_state_dict(model_cache.load(opt, f"T={epoch}"))
+            problem.torch_model.load_state_dict(model_cache.load(opt, timestr(epoch)))
+
+            if flipped:
+                problem.torch_model.model.weight.data = (
+                    -problem.torch_model.model.weight.data
+                )
+                problem.torch_model.model.bias.data = (
+                    -problem.torch_model.model.bias.data
+                )
 
             lossfunc = torch.nn.CrossEntropyLoss()
             loss = lossfunc(problem.torch_model.model(X), y)
@@ -82,20 +101,30 @@ def process_grads():
             loss.backward()
 
             grad_b_cache.save(
-                problem.torch_model.model.bias.grad.detach(), opt, f"T={epoch}"
+                problem.torch_model.model.bias.grad.detach(),
+                opt,
+                timestr(epoch, flipped),
             )
             grad_w_cache.save(
-                problem.torch_model.model.weight.grad.detach(), opt, f"T={epoch}"
+                problem.torch_model.model.weight.grad.detach(),
+                opt,
+                timestr(epoch, flipped),
             )
 
 
-def process_diag_ggn_direct():
+def process_diag_ggn_direct(flipped):
     for opt in tqdm([sgd, adamm]):
         w_done = all(
-            [hessian_w_cache.exists(opt, f"T={epoch}") for epoch in EPOCHS_TO_SAVE]
+            [
+                hessian_w_cache.exists(opt, timestr(epoch, flipped))
+                for epoch in EPOCHS_TO_SAVE
+            ]
         )
         b_done = all(
-            [hessian_b_cache.exists(opt, f"T={epoch}") for epoch in EPOCHS_TO_SAVE]
+            [
+                hessian_b_cache.exists(opt, timestr(epoch, flipped))
+                for epoch in EPOCHS_TO_SAVE
+            ]
         )
         if w_done and b_done:
             continue
@@ -103,65 +132,87 @@ def process_diag_ggn_direct():
         X, y = (x_cache.load(opt), y_cache.load(opt))
         for epoch in tqdm(EPOCHS_TO_SAVE):
             w_and_b_done = (
-                hessian_w_cache.exists(opt, f"T={epoch}"),
-                hessian_b_cache.exists(opt, f"T={epoch}"),
+                hessian_w_cache.exists(opt, timestr(epoch, flipped)),
+                hessian_b_cache.exists(opt, timestr(epoch, flipped)),
             )
             if all(w_and_b_done):
                 continue
 
             problem.init_problem()
-            problem.torch_model.load_state_dict(model_cache.load(opt, f"T={epoch}"))
+            problem.torch_model.load_state_dict(model_cache.load(opt, timestr(epoch)))
+
+            if flipped:
+                problem.torch_model.model.weight.data = (
+                    -problem.torch_model.model.weight.data
+                )
+                problem.torch_model.model.bias.data = (
+                    -problem.torch_model.model.bias.data
+                )
 
             model = problem.torch_model.model
             model.to(X.device)
 
             probs = torch.nn.functional.softmax(model(X), dim=1)
 
-            diag_hessian_w = torch.zeros_like(model.weight)
-            diag_hessian_b = torch.zeros_like(model.bias)
-            classes = probs.shape[1]
+            with torch.no_grad():
+                diag_hessian_w = torch.zeros_like(model.weight)
+                diag_hessian_b = torch.zeros_like(model.bias)
+                classes = probs.shape[1]
 
-            for i in tqdm(list(range(classes))):
-                weight = probs[:, i] * (1 - probs[:, i])
-                diag_hessian_w[i, :] += torch.einsum("n,nd->d", weight, X)
-                diag_hessian_b[i] += torch.sum(weight)
+                for i in tqdm(list(range(classes))):
+                    weight = probs[:, i] * (1 - probs[:, i])
+                    diag_hessian_w[i, :] += torch.einsum("n,nd->d", weight, X)
+                    diag_hessian_b[i] += torch.sum(weight)
 
-            hessian_w_cache.save(diag_hessian_w, opt, f"T={epoch}")
-            hessian_b_cache.save(diag_hessian_w, opt, f"T={epoch}")
+                hessian_w_cache.save(
+                    diag_hessian_w.detach(), opt, timestr(epoch, flipped)
+                )
+                hessian_b_cache.save(
+                    diag_hessian_w.detach(), opt, timestr(epoch, flipped)
+                )
 
 
-def load_data():
+def load_data(flipped=True):
     run_and_save_checkpoints()
-    process_grads()
-    process_diag_ggn_direct()
+    process_grads(flipped)
+    process_diag_ggn_direct(flipped)
 
     grads_adamm = [
-        torch.load(grad_w_cache.get_path(adamm, f"T={epoch}"))
+        torch.load(grad_w_cache.get_path(adamm, timestr(epoch, flipped)))
         for epoch in EPOCHS_TO_SAVE
     ]
     grads_sgd = [
-        torch.load(grad_w_cache.get_path(sgd, f"T={epoch}")) for epoch in EPOCHS_TO_SAVE
+        torch.load(grad_w_cache.get_path(sgd, timestr(epoch, flipped)))
+        for epoch in EPOCHS_TO_SAVE
     ]
     ggns_adamm = [
-        torch.load(hessian_w_cache.get_path(adamm, f"T={epoch}"))
+        torch.load(hessian_w_cache.get_path(adamm, timestr(epoch, flipped)))
         for epoch in EPOCHS_TO_SAVE
     ]
     ggns_sgd = [
-        torch.load(hessian_w_cache.get_path(sgd, f"T={epoch}"))
+        torch.load(hessian_w_cache.get_path(sgd, timestr(epoch, flipped)))
         for epoch in EPOCHS_TO_SAVE
     ]
-    return grads_adamm, grads_sgd, ggns_adamm, ggns_sgd, None
+    plot_to_make = "sgd"
+    plot_to_make = "adam"
+    plot_to_make = "correlation"
+    return grads_adamm, grads_sgd, ggns_adamm, ggns_sgd, plot_to_make
+
+
+def settings_longplot(plt):
+    update_plt(plt, rel_width=1.0, nrows=3, ncols=8, height_to_width_ratio=1.05)
+
+
+def settings_shortplot(plt):
+    update_plt(plt, rel_width=1.0, nrows=1, ncols=6, height_to_width_ratio=1.35)
 
 
 def settings(plt):
-    # update_plt(plt, rel_width=1.0, nrows=3, ncols=8, height_to_width_ratio=1.05)
-    update_plt(
-        plt, rel_width=1.0, nrows=3, ncols=4, height_to_width_ratio=2 / (1 + np.sqrt(5))
-    )
+    update_plt(plt, rel_width=1.0, nrows=1, ncols=6, height_to_width_ratio=1.35)
 
 
 def make_figure(fig, data):
-    grads_adamm, grads_sgd, ggns_adamm, ggns_sgd, plot_sgd = data
+    grads_adamm, grads_sgd, ggns_adamm, ggns_sgd, what_to_plot = data
 
     # plot_sgd = False
     # plot_sgd = True
@@ -169,15 +220,15 @@ def make_figure(fig, data):
     sqrt_grads = True
     divide_hessian_by_N = True
 
-    fig.set_dpi(100)
+    fig.set_dpi(200)
 
     N = 22528
 
     # EPOCHS_TO_SAVE = (0, 1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100)
     epochs_to_plot = (0, 1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100)
     epochs_to_plot = (0, 1, 2, 3, 5, 10, 20, 30, 50, 100)
-    if plot_sgd is None:
-        epochs_to_plot = [0, 100]
+    if what_to_plot == "correlation":
+        epochs_to_plot = [0, 1, 5, 10, 50, 100]
     else:
         epochs_to_plot = (0, 1, 2, 5, 10, 20, 50, 100)
     # epochs_to_plot = (0, 2, 5, 20, 50, 100)
@@ -195,9 +246,57 @@ def make_figure(fig, data):
 
     cmap = matplotlib.cm.get_cmap("viridis")
 
+    if sqrt_grads:
+        lims_grads = [10**-5, 10**1]
+        ticks_grads = [10**-4, 10**-2, 10**0]
+        lims_hess = [10**-7, 10**-1]
+        ticks_hess = [10**-6, 10**-4, 10**-2]
+    else:
+        lims_grads = [10**-10, 10**2]
+        lims_hess = [10**-8, 10**0]
+        ticks_grads = [10**-9, 10**-4, 10**1]
+        ticks_hess = [10**-7, 10**-4, 10**-1]
+
     def compute_norm(grads_val):
         grads_norm_squared = ((grads_val) ** 2).sum(axis=1)
         return np.sqrt(grads_norm_squared) if sqrt_grads else grads_norm_squared
+
+    def plot_corr(ax, grad_vals, ggn_vals):
+        for pow in range(11):
+            idx_start = 2**pow - 1
+            idx_end = 2 ** (pow + 1) - 1
+
+            NMAX = 100
+            ax.plot(
+                subsample(grad_vals[idx_start:idx_end], NMAX=NMAX),
+                subsample(ggn_vals[idx_start:idx_end], NMAX=NMAX),
+                ".",
+                markersize=2,
+                color=cmap(pow / 10),
+            )
+
+    def plot_on(axtop, axmid, axbot, grad_vals, ggn_vals):
+        for pow in range(11):
+            idx_start = 2**pow - 1
+            idx_end = 2 ** (pow + 1) - 1
+            indices = np.array(list(range(idx_start, idx_end)))
+
+            NMAX = 100
+            axtop.plot(
+                subsample(indices + 1, NMAX=NMAX),
+                subsample(grad_vals[idx_start:idx_end], NMAX=NMAX),
+                ".",
+                markersize=2,
+                color=cmap(pow / 10),
+            )
+            axmid.plot(
+                subsample(indices + 1, NMAX=NMAX),
+                subsample(ggn_vals[idx_start:idx_end], NMAX=NMAX),
+                ".",
+                markersize=2,
+                color=cmap(pow / 10),
+            )
+        plot_corr(axbot, grad_vals, ggn_vals)
 
     def plot_single(ggns, grads, sqrt_grads):
         axes = [
@@ -216,36 +315,10 @@ def make_figure(fig, data):
             axmid = axes[1][i]
             axbot = axes[-1][i]
 
-            grad_vals = compute_norm(grads[i].numpy())
-            ggn_vals = ggns[i].numpy().mean(axis=1)
+            grad_vals = compute_norm(grads[i].detach().numpy())
+            ggn_vals = ggns[i].detach().numpy().mean(axis=1)
 
-            for pow in range(11):
-                idx_start = 2**pow - 1
-                idx_end = 2 ** (pow + 1) - 1
-                indices = np.array(list(range(idx_start, idx_end)))
-
-                NMAX = 100
-                axtop.plot(
-                    subsample(indices + 1, NMAX=NMAX),
-                    subsample(grad_vals[idx_start:idx_end], NMAX=NMAX),
-                    ".",
-                    markersize=2,
-                    color=cmap(pow / 10),
-                )
-                axmid.plot(
-                    subsample(indices + 1, NMAX=NMAX),
-                    subsample(ggn_vals[idx_start:idx_end], NMAX=NMAX),
-                    ".",
-                    markersize=2,
-                    color=cmap(pow / 10),
-                )
-                axbot.plot(
-                    subsample(grad_vals[idx_start:idx_end], NMAX=NMAX),
-                    subsample(ggn_vals[idx_start:idx_end], NMAX=NMAX),
-                    ".",
-                    markersize=2,
-                    color=cmap(pow / 10),
-                )
+            plot_on(axtop, axmid, axbot, grad_vals, ggn_vals)
 
             for ax in [axtop, axmid, axbot]:
                 ax.set_yscale("log")
@@ -271,105 +344,44 @@ def make_figure(fig, data):
             ax.set_xlabel("Class ", labelpad=-5)
         for ax in axes[-1]:
             ax.set_xlabel(" Grad", labelpad=-5)
-        if True:
-            if sqrt_grads:
-                lims_grads = [10**-5, 10**1]
-                ticks_grads = [10**-4, 10**-2, 10**0]
-                lims_hess = [10**-7, 10**-1]
-                ticks_hess = [10**-6, 10**-4, 10**-2]
-            else:
-                lims_grads = [10**-10, 10**2]
-                lims_hess = [10**-8, 10**0]
-                ticks_grads = [10**-9, 10**-4, 10**1]
-                ticks_hess = [10**-7, 10**-4, 10**-1]
 
-            for ax in axes[0]:
-                ax.set_ylim(lims_grads)
-                ax.set_yticks(ticks_grads)
-            for ax in axes[1]:
-                ax.set_ylim(lims_hess)
-                ax.set_yticks(ticks_hess)
-            for ax in axes[2]:
-                ax.set_xlim(lims_grads)
-                ax.set_xticks(ticks_grads)
-                ax.set_xticklabels(
-                    [
-                        "$10^{" + str(int(np.log10(ticks_grads[0]))) + "}$",
-                        "",
-                        "$10^{" + str(int(np.log10(ticks_grads[-1]))) + "}$",
-                    ]
-                )
-                ax.set_ylim(lims_hess)
-                ax.set_yticks(ticks_hess)
+        for ax in axes[0]:
+            ax.set_ylim(lims_grads)
+            ax.set_yticks(ticks_grads)
+        for ax in axes[1]:
+            ax.set_ylim(lims_hess)
+            ax.set_yticks(ticks_hess)
+        for ax in axes[2]:
+            ax.set_xlim(lims_grads)
+            ax.set_xticks(ticks_grads)
+            ax.set_xticklabels(
+                [
+                    "$10^{" + str(int(np.log10(ticks_grads[0]))) + "}$",
+                    "",
+                    "$10^{" + str(int(np.log10(ticks_grads[-1]))) + "}$",
+                ]
+            )
+            ax.set_ylim(lims_hess)
+            ax.set_yticks(ticks_hess)
+
         normalize_y_axis(*axes[0])
         normalize_y_axis(*axes[1])
         # plt.subplot_tool()
         fig.tight_layout(pad=0.01)
 
-    def plot_both():
+    def plot_correlation():
         K = len(grads_sgd)
-        offset = 0
-        COLS = 3
         axes = [
-            [fig.add_subplot(3, COLS, i + 1) for i in range(COLS)],
-            [fig.add_subplot(3, COLS, COLS + i + 1) for i in range(COLS)],
-            [fig.add_subplot(3, COLS, 2 * COLS + i + 1) for i in range(COLS)],
+            [fig.add_subplot(1, K, i + 1) for i in range(K)],
         ]
 
-        flipped_axes = [
-            [axes[0][0], axes[1][0], axes[2][0]],
-            [axes[0][1], axes[1][1], axes[2][1]],
-            [axes[0][2], axes[1][2], axes[2][2]],
-        ]
-        flip_axes = True
-        if flip_axes:
-            axes = flipped_axes
-
-        def plot_on(axtop, axmid, axbot, grad_vals, ggn_vals):
-            for pow in range(11):
-                idx_start = 2**pow - 1
-                idx_end = 2 ** (pow + 1) - 1
-                indices = np.array(list(range(idx_start, idx_end)))
-
-                NMAX = 100
-                axtop.plot(
-                    subsample(indices + 1, NMAX=NMAX),
-                    subsample(grad_vals[idx_start:idx_end], NMAX=NMAX),
-                    ".",
-                    markersize=2,
-                    color=cmap(pow / 10),
-                )
-                axmid.plot(
-                    subsample(indices + 1, NMAX=NMAX),
-                    subsample(ggn_vals[idx_start:idx_end], NMAX=NMAX),
-                    ".",
-                    markersize=2,
-                    color=cmap(pow / 10),
-                )
-                axbot.plot(
-                    subsample(grad_vals[idx_start:idx_end], NMAX=NMAX),
-                    subsample(ggn_vals[idx_start:idx_end], NMAX=NMAX),
-                    ".",
-                    markersize=2,
-                    color=cmap(pow / 10),
-                )
-
-        plot_on(
-            axes[0][0],
-            axes[1][0],
-            axes[2][0],
-            grad_vals=compute_norm(grads_sgd[0].numpy()),
-            ggn_vals=ggns_sgd[0].numpy().mean(axis=1),
-        )
-        plot_on(
-            axes[0][1],
-            axes[1][1],
-            axes[2][1],
-            grad_vals=compute_norm(grads_sgd[1].numpy()),
-            ggn_vals=ggns_sgd[1].numpy().mean(axis=1),
-        )
-        for i in range(3):
-            axes[2][i].plot(
+        for i in range(K):
+            plot_corr(
+                axes[0][i],
+                compute_norm(grads_adamm[i].detach().numpy()),
+                ggns_adamm[i].detach().numpy().mean(axis=1),
+            )
+            axes[0][i].plot(
                 [10**-5, 10**1],
                 [10**-7, 10**-1],
                 color="gray",
@@ -377,128 +389,57 @@ def make_figure(fig, data):
                 linestyle="--",
                 linewidth=1.0,
             )
-        plot_on(
-            axes[0][2],
-            axes[1][2],
-            axes[2][2],
-            grad_vals=compute_norm(grads_adamm[1].numpy()),
-            ggn_vals=ggns_adamm[1].numpy().mean(axis=1),
-        )
 
-        if flip_axes:
-            axes[0][0].set_title("Gradient")
-            axes[1][0].set_title("Hessian")
-            axes[2][0].set_title("Correlation")
-        else:
-            axes[0][0].set_title("At initialization")
-            axes[0][1].set_title("After 100 GD steps")
-            axes[0][2].set_title("After 100 Adam steps")
+        for i, t in enumerate(epochs_to_plot):
+            if i == 0:
+                axes[0][0].set_title("Correlation at \n $t=0$", y=0.825)
+            else:
+                axes[0][i].set_title("$t=" + str(t) + "$")
 
         for row in axes:
             for ax in row:
                 ax.set_yscale("log")
                 ax.set_xscale("log")
 
-        if not flip_axes:
-            for ax in axes[0][1:] + axes[1][1:] + axes[-1][1:]:
-                ax.set_yticklabels([])
+        for ax in axes[0]:
+            ax.set_xlim(1 / 2, ax.get_xlim()[1] * 1.10)
+            ax.set_xticks([1, 10, 100, 1000])
+            ax.set_xticklabels([1, "", "", "10$^3$"])
 
-        grad_str = (
-            r"$\Vert \nabla_{w_c} \, f(W_t)\Vert$"
-            if sqrt_grads
-            else r"$\Vert \nabla_{w_c} \, f(W_t)\Vert^2$"
-        )
-        if not flip_axes:
-            grad_str = "Gradient\n" + grad_str
+        for ax in axes[0][1:]:
+            ax.set_yticklabels([])
 
-        for row in (axes[0], axes[1]):
-            for ax in row:
-                ax.set_xlim(1 / 2, ax.get_xlim()[1] * 1.10)
-                ax.set_xticks([1, 10, 100, 1000])
-                ax.set_xticklabels([1, "", "", "10$^3$"])
-
-        if flip_axes:
-            for col in [0, 1, 2]:
-                axes[0][col].set_ylabel(grad_str)
-                axes[1][col].set_ylabel(r"Tr$(\nabla_{w_c}^2 \, f(W_t))$")
-                axes[2][col].set_ylabel("Hessian")
-        else:
-            for col in [0, 1, 2]:
-                axes[0][col].set_ylabel(grad_str)
-                axes[1][col].set_ylabel("Hessian\n" + r"Tr$(\nabla_{w_c}^2 \, f(W_t))$")
-                axes[2][col].set_ylabel("Correlation\n Hessian")
+        axes[0][0].set_ylabel("Hessian\n" + r"Tr$(\nabla_{w_c}^2  \,f\,\,)$")
+        for i in range(K):
+            axes[0][i].set_xlabel(
+                "Grad.\n" + r"$\Vert \nabla_{w_c} \, f\Vert$", labelpad=-7
+            )
 
         for ax in axes[0]:
-            ax.set_xlabel("Class", labelpad=-7)
-        for ax in axes[1]:
-            ax.set_xlabel("Class", labelpad=-7)
-        for ax in axes[-1]:
-            ax.set_xlabel("Gradient", labelpad=-7)
-        if True:
-            if sqrt_grads:
-                lims_grads = [10**-5, 10**1]
-                ticks_grads = [10**-4, 10**-2, 10**0]
-                lims_hess = [10**-7, 10**-1]
-                ticks_hess = [10**-6, 10**-4, 10**-2]
-            else:
-                lims_grads = [10**-10, 10**2]
-                lims_hess = [10**-8, 10**0]
-                ticks_grads = [10**-9, 10**-4, 10**1]
-                ticks_hess = [10**-7, 10**-4, 10**-1]
+            ax.set_xlim(lims_grads)
+            ax.set_xticks(ticks_grads)
+            ax.set_xticklabels(
+                [
+                    "$10^{" + str(int(np.log10(ticks_grads[0]))) + "}$",
+                    "",
+                    "$10^{" + str(int(np.log10(ticks_grads[-1]))) + "}$",
+                ]
+            )
+            ax.set_ylim(lims_hess)
+            ax.set_yticks(ticks_hess)
 
-            for ax in axes[0]:
-                ax.set_ylim(lims_grads)
-                ax.set_yticks(ticks_grads)
-            for ax in axes[1]:
-                ax.set_ylim(lims_hess)
-                ax.set_yticks(ticks_hess)
-            for ax in axes[2]:
-                ax.set_xlim(lims_grads)
-                ax.set_xticks(ticks_grads)
-                ax.set_xticklabels(
-                    [
-                        "$10^{" + str(int(np.log10(ticks_grads[0]))) + "}$",
-                        "",
-                        "$10^{" + str(int(np.log10(ticks_grads[-1]))) + "}$",
-                    ]
-                )
-                ax.set_ylim(lims_hess)
-                ax.set_yticks(ticks_hess)
         normalize_y_axis(*axes[0])
-        normalize_y_axis(*axes[1])
 
-        # fig.text(
-        #     0.3,
-        #     0.95,
-        #     "Gradient Descent",
-        #     va="center",
-        #     ha="center",
-        #     size=12,
-        # )
-        # fig.text(
-        #     0.8,
-        #     0.95,
-        #     "Adam",
-        #     va="center",
-        #     ha="center",
-        #     size=12,
-        # )
+        fig.tight_layout(pad=0.5, rect=(0.0, 0, 1, 1.0))
 
-        if flip_axes:
-            params = {"va": "center", "ha": "center", "size": 10}
-            fig.text(0.10, 0.8, "At initialization", **params)
-            fig.text(0.10, 0.5, "After 100 steps\n using GD", **params)
-            fig.text(0.10, 0.2, "After 100 steps\n using Adam", **params)
-
-        fig.tight_layout(pad=0.5, rect=(0.2, 0, 1, 1.0))
-
-    if plot_sgd is None:
-        plot_both()
+    if what_to_plot == "correlation":
+        plot_correlation()
+    elif what_to_plot == "sgd":
+        plot_single(ggns_sgd, grads_sgd, sqrt_grads)
+    elif what_to_plot == "adam":
+        plot_single(ggns_adamm, grads_adamm, sqrt_grads)
     else:
-        if plot_sgd:
-            plot_single(ggns_sgd, grads_sgd, sqrt_grads)
-        else:
-            plot_single(ggns_adamm, grads_adamm, sqrt_grads)
+        raise ValueError(f"Unknown plot type {what_to_plot}")
 
 
 if __name__ == "__main__":
@@ -512,7 +453,7 @@ if __name__ == "__main__":
     # Load the checkpoints and save the diagonal hessian
     # process_diag_ggn_mc() # ~20min
 
-    settings(plt)
+    settings_shortplot(plt)
     data = load_data()
     grads_adamm, grads_sgd, ggns_adamm, ggns_sgd, plot_sgd = data
 
@@ -524,13 +465,14 @@ if __name__ == "__main__":
             grads_sgd,
             ggns_adamm,
             ggns_sgd,
-            None,
+            "correlation",
         ),
     )
-    fig.savefig(get_dir("grad_hessian") / "gradient_hessian_both.pdf")
-    fig.savefig(get_dir("grad_hessian") / "gradient_hessian_both.png", dpi=600)
+    fig.savefig(get_dir("grad_hessian") / "gradient_hessian_corr.pdf")
+    fig.savefig(get_dir("grad_hessian") / "gradient_hessian_corr.png", dpi=600)
     plt.close(fig)
 
+    settings_longplot(plt)
     fig = plt.figure()
     make_figure(
         fig,
@@ -539,7 +481,7 @@ if __name__ == "__main__":
             grads_sgd,
             ggns_adamm,
             ggns_sgd,
-            True,
+            "sgd",
         ),
     )
     fig.savefig(get_dir("grad_hessian") / "gradient_hessian_sgd.pdf")
@@ -554,7 +496,7 @@ if __name__ == "__main__":
             grads_sgd,
             ggns_adamm,
             ggns_sgd,
-            False,
+            "adam",
         ),
     )
     fig.savefig(get_dir("grad_hessian") / "gradient_hessian_adam.pdf")

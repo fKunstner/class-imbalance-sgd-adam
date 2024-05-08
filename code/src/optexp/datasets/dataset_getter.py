@@ -18,6 +18,8 @@ from optexp.datasets.loaders import (
     load_imagenet,
     load_imbalanced_imagenet,
     load_10_big_class_imagenet,
+    load_1_major_class_imagenet,
+    load_small_imagenet,
 )
 
 
@@ -45,6 +47,16 @@ def get_image_dataset(
             flatten=flatten,
             device=config.get_device(),
         )
+    elif dataset_name == "SmallImageNet":
+        return load_small_imagenet(
+            save_path=config.get_dataset_directory(),
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            normalize=normalize,
+            flatten=flatten,
+            device=config.get_device(),
+        )
     elif dataset_name == "ImbalancedImageNet":
         return load_imbalanced_imagenet(
             save_path=config.get_dataset_directory(),
@@ -57,6 +69,16 @@ def get_image_dataset(
         )
     elif dataset_name == "TenBigClassImageNet":
         return load_10_big_class_imagenet(
+            save_path=config.get_dataset_directory(),
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            normalize=normalize,
+            flatten=flatten,
+            device=config.get_device(),
+        )
+    elif dataset_name == "OneMajorClassImageNet":
+        return load_1_major_class_imagenet(
             save_path=config.get_dataset_directory(),
             batch_size=batch_size,
             shuffle=shuffle,

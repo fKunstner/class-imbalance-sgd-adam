@@ -11,7 +11,7 @@ class CacheFile:
         self.prefix = "" if prefix is None else prefix + "_"
         self.suffix = "" if suffix is None else "_" + suffix
         if not self.basedir.exists():
-            self.basedir.mkdir()
+            self.basedir.mkdir(parents=True, exist_ok=True)
 
     def get_path(self, *objs):
         filename = self.prefix + "_".join(map(str, objs)) + self.suffix + ".pt"
@@ -21,7 +21,7 @@ class CacheFile:
         return self.get_path(*objs).exists()
 
     def save(self, thing, *objs):
-        torch.save(thing, self.get_path(objs))
+        torch.save(thing, self.get_path(*objs))
 
     def load(self, *objs):
         return torch.load(self.get_path(*objs))

@@ -1,7 +1,3 @@
-from pathlib import Path
-
-from optexp import exp_runner_cli
-from optexp.config import UseWandbProject
 from optexp.experiments.big_experiments import dispatch_cmdline_to_all_groups
 
 if __name__ == "__main__":
@@ -28,21 +24,15 @@ if __name__ == "__main__":
     from optexp.experiments.simpler_transformers import (
         basic_one_layer,
         basic_one_layer_perclass,
-        no_mlp_layernorm_dropout,
         train_only_last_layer,
         train_only_last_layer_perclass,
-        train_only_last_layer_tiny,
-        train_only_last_layer_tiny_perclass,
     )
 
     groups = [
         basic_one_layer,
         basic_one_layer_perclass,
-        no_mlp_layernorm_dropout,
         train_only_last_layer,
         train_only_last_layer_perclass,
-        train_only_last_layer_tiny,
-        train_only_last_layer_tiny_perclass,
     ]
 
     ##

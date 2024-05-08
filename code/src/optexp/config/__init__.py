@@ -118,7 +118,7 @@ def get_device() -> str:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if device != "cuda":
         get_logger("GPU not available, running experiments on CPU.", logging.WARNING)
-    return "cpu"
+    return device
 
 
 def get_dataset_directory() -> Path:
